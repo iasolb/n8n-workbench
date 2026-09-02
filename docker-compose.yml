@@ -1,0 +1,65 @@
+# The n8n container, as a file instead of as something one machine happens to
+# be running.
+#
+# WHY THIS EXISTS: the PC has been running `n8n-n8n-1` since 2026-08-21 and the
+# compose file that defines it was never committed anywhere, so on 2026-09-01
+# there was no way to stand the same thing up on the Mac. This repo existed for
+# exactly this and held one placeholder file. That is the gap.
+#
+# The service is named `n8n` and the project is named `n8n` (see .env), so the
+# container comes up as `n8n-n8n-1`, matching the name every existing doc and
+# tool already uses.
+#
+#   docker compose up -d          start
+#   docker compose logs -f n8n    watch it boot
+#   docker compose down           stop, keeping the data volume
+#
+# Secrets live in .env, which is gitignored. Copy .env.example and fill it in,
+# or run ./setup.sh which does that and generates the encryption key.
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    restart: unless-stopped
+    ports:
+      # Loopback only by default. The PC exposes 5678 to the tailnet; if this
+      # machine should too, change to "5678:5678" and understand that anything
+      # on the tailnet can then reach the editor.
+      - "127.0.0.1:5678:5678"
+    environment:
+      # The encryption key protects stored credentials. It is NOT optional:
+      # let n8n generate its own and the credentials in the data volume become
+      # unreadable the moment the volume is recreated.
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?set it in .env, see setup.sh}
+      - GENERIC_TIMEZONE=${TZ:-America/New_York}
+      - TZ=${TZ:-America/New_York}
+      # The container's whole filesystem contract, and the reason the mounts
+      # below are narrow: docs/n8n-config-design.md grants this container its
+      # own /state and /workflows and nothing else on the host.
+      - N8N_RESTRICT_FILE_ACCESS_TO=/state:/workflows
+      # Served over plain http on loopback, so the secure-cookie requirement
+      # would lock the editor out of its own login form.
+      - N8N_SECURE_COOKIE=false
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    volumes:
+      # The instance's own database, credential store and encryption key.
+      # A named volume, so `docker compose down` does not destroy it.
+      - n8n_data:/home/node/.n8n
+      # Workflows are repo files. READ-ONLY on purpose: the repo is the source
+      # of truth and an instance must not be able to edit its own definitions
+      # behind git's back.
+      - ${MEMORY_BANK:-../ai-memory-bank}/automation/workflows:/workflows:ro
+      # The landing zone: where workflows write what they observe.
+      - ${MEMORY_BANK:-../ai-memory-bank}/state:/state
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  n8n_data:
