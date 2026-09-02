@@ -41,6 +41,19 @@ services:
       # would lock the editor out of its own login form.
       - N8N_SECURE_COOKIE=false
       - N8N_RUNNERS_ENABLED=true
+      # THE INJECTION CONTRACT (Ian, 2026-09-01): "anything secret becomes an
+      # injection". Workflow JSON in this repo is public and must never carry a
+      # personal value inline; it references `$env.NAME` and the value arrives
+      # here, from .env, which is gitignored.
+      #
+      # MAIL_ACCOUNT is the mailbox the gmail workflows target. It is NOT
+      # optional: `$env.MAIL_ACCOUNT` with nothing behind it resolves to
+      # undefined, and a digest that silently targets nothing looks exactly like
+      # one that worked. Both gmail workflows were in that state until
+      # 2026-09-01, sanitised in the repo and never given a provider.
+      - MAIL_ACCOUNT=${MAIL_ACCOUNT:?set it in .env, the gmail workflows target it}
+      # Nodes cannot read $env at all unless this is false.
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_VERSION_NOTIFICATIONS_ENABLED=false
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
